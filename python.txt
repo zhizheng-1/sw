@@ -1,0 +1,13 @@
+ver=3.12; o=/Library/Frameworks/Python.framework/Versions/$ver; mv -f Resources/Python.app/Contents/MacOS/Python bin/python$ver; rm -rf Headers Resources _CodeSignature
+#for a in `grep -Ilr "$o"`;do sed -i '' -e "s|$o|$PWD|g" "$a"; done
+mv Python lib/libpython$ver.dylib; codesign -f -s - lib/libpython$ver.dylib
+install_name_tool -change $o/Python @executable_path/../lib/libpython$ver.dylib bin/python$ver; codesign -f -s - bin/python$ver
+p(){ l=(); for f in $~1; do [ ! -L $f ] && otool -L $f|sed 1,`otool -D $f|awk 'END{print NR}'`d|grep "$2"|awk '{print $1}'|while read i;do j=$3/${i##*/}; echo $f $i $j; install_name_tool -change $i $j $f; l+=($f); done; done; codesign -f -s - ${(u)l} }
+p "lib/*.dylib" $o @loader_path
+p "lib/python*/lib-dynload/*.so" $o @loader_path/../..
+
+[linux]
+https://devguide.python.org/setup/
+sudo apt build-dep python3
+sudo apt install build-essential gdb lcov pkg-config libbz2-dev libffi-dev libgdbm-dev libgdbm-compat-dev liblzma-dev libncurses5-dev libreadline6-dev libsqlite3-dev libssl-dev lzma lzma-dev tk-dev uuid-dev zlib1g-dev
+./configure --enable-optimizations --enable-shared LDFLAGS='-Wl,-rpath=\$$ORIGIN/../lib'

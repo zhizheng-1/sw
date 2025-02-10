@@ -1,0 +1,60 @@
+[gnuplot]
+http://www.gnuplot.info
+
+l=(gd lua cairo pango readline libcerf pkgconf gnu-sed)
+i=1
+while [[ $i -le ${#l} ]]; do
+	echo $i ${l[$i]}
+	curl https://formulae.brew.sh/api/formula/${l[$i]}.json >a.json
+	r=(`cat a.json|python3 -c "import sys, json; j=json.load(sys.stdin); r=j['variations']['sequoia']['dependencies'] if 'sequoia' in j['variations'] and 'dependencies' in j['variations']['sequoia'] else j['dependencies']; r=[x for x in r if x not in {'python-packaging','python@3.13'}]; print(' '.join(r))"`)
+	for a in $r; do [[ ${l[(ie)$a]} -gt ${#l} ]] && l=($l $a); echo $l; done
+	u=`cat a.json|python3 -c "import sys, json; j=json.load(sys.stdin)['bottle']['stable']['files']; u=j['sequoia']['url'] if 'sequoia' in j else j['sonoma']['url']; print(u)"`
+	print $u
+	curl -L -H 'Authorization: Bearer QQ==' "$u" >a
+	tar zxvf a
+	i=$((i+1))
+done
+rm a a.json
+mkdir include lib
+mv */*/include/* include
+mv */*/include/X11/* include/X11
+mv */*/include/X11/extensions/* include/X11/extensions
+mv */*/lib/* lib
+mv */*/lib/pkgconfig/* lib/pkgconfig
+mv lib/**/glibconfig.h include/glib-2.0
+export PATH=~/.local/opt/CLT/usr/bin:`echo ~/Desktop/lua/**/bin`:$PATH
+export CC="clang -isysroot $HOME/.local/opt/CLT/SDKs/MacOSX.sdk"
+export CXX="clang++ -isysroot $HOME/.local/opt/CLT/SDKs/MacOSX.sdk"
+export CFLAGS="-I$HOME/Desktop/include -I$HOME/Desktop/include/cairo -I$HOME/Desktop/include/glib-2.0 -I$HOME/Desktop/include/lua -I$HOME/Desktop/include/pango-1.0 -I$HOME/Desktop/include/harfbuzz"
+export CPPFLAGS=$CFLAGS
+export LDFLAGS="-L$HOME/Desktop/lib"
+export CAIROPANGO_CFLAGS=$CFLAGS
+export CAIROPANGO_LIBS="$LDFLAGS -lpango-1.0 -lcairo -lpangocairo-1.0 -lglib-2.0 -lgobject-2.0"
+export CAIROPDF_CFLAGS=$CAIROPANGO_CFLAGS
+export CAIROPDF_LIBS=$CAIROPANGO_LIBS
+export CAIROEPS_CFLAGS=$CAIROPANGO_CFLAGS
+export CAIROEPS_LIBS=$CAIROPANGO_LIBS
+export libgd_LIBS=-lgd
+export LIBCERF_LIBS=-lcerf
+export WEBP_LIBS="-lwebp -lwebpmux"
+export LUA_LIBS=-llua
+touch ~/Desktop/pkg-config
+chmod +x ~/Desktop/pkg-config
+export PKG_CONFIG=~/Desktop/pkg-config
+cd ~/Desktop/lua/**/bin
+install_name_tool -change @@HOMEBREW_PREFIX@@/opt/lua/lib/liblua.dylib $HOME/Desktop/lib/liblua.dylib lua
+./configure --without-x --without-qt
+[sed -i.0 -e '233s|.*|putenv("PANGOCAIRO_BACKEND=fc");|' src/plot.c]
+
+mkdir lib
+for f in `otool -L bin/*|grep @@|awk '{print $1}'|sort -u`; do cp -n ~/Desktop/lib/${f##*/} lib; done
+for f in `otool -L lib/*|grep @|awk '{print $1}'|sort -u`; do cp -n ~/Desktop/lib/${f##*/} lib; done; ls -l lib|wc -l
+p(){ l=(); for f in $~1; do [ ! -L $f ] && otool -L $f|sed 1,`otool -D $f|awk 'END{print NR}'`d|grep "$2"|awk '{print $1}'|while read i;do j=$3/${i##*/}; echo $f $i $j; install_name_tool -change $i $j $f; l+=($f); done; done; codesign -f -s - ${(u)l} }
+p "bin/*" @ @executable_path/../lib
+p "lib/*" @ @loader_path
+
+sudo apt install libgd-dev liblua5.4-dev libcerf-dev libwebp-dev libpango1.0-dev lua5.4
+./configure --without-x --without-qt LDFLAGS='-Wl,-rpath=\$$ORIGIN/../lib,--disable-new-dtags'
+mkdir lib
+b=(`cat ~/.cache/logs/base.txt`)
+for a in `ldd bin/gnuplot|grep "/lib/"|awk '{print $1}'|sort|uniq`;do [ ${b[(ie)$a]} -gt ${#b} ] && cp /lib/*/$a lib;done

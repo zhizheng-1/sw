@@ -1,0 +1,21 @@
+https://developer.apple.com/download/all/
+pkgutil --expand-full <pkg> <dir>, combine tools and SDK
+cd usr/bin; mv gcc gcc.0; ln -sf clang gcc; cd ../..
+cd Library/Frameworks/Python3.framework/Versions/3.9; mv Resources/Python.app/**/Python bin/python3.9; rm -rf Resources/Python.app
+install_name_tool -change @executable_path/../../../../Python3 @executable_path/../Python3 bin/python3.9; codesign -f -s - bin/python3.9
+mv usr ~/.local/opt/CLT; mv Library ~/.local/opt/CLT; mv SDKs ~/.local/opt/CLT
+
+CC/CXX: clang/clang++ -isysroot ~/.local/opt/CLT/SDKs/MacOSX.sdk
+
+[gcc]
+s=(g++ gdb make);b=(`apt list --installed|sed -e 's|/.*$||g'`)
+l=();for a in `apt-cache depends --recurse --no-recommends --no-suggests --no-conflicts --no-breaks --no-replaces --no-enhances $s|grep "^\w"|grep -v ^cdeb|grep -v ^libdeb|sort -u`;do [ ${b[(ie)$a]} -gt ${#b} ] &&l+=($a);done
+d=`pwd`;cd `mktemp -d`;apt download $l;for a in *; do dpkg -x $a $d; done; cd -
+ln -sf /lib/x86_64-linux-gnu/libstdc++.so.6 usr/lib/gcc/x86_64-linux-gnu/11/libstdc++.so
+LD_LIBRARY_PATH=<dir>/usr/lib/x86_64-linux-gnu
+
+CC/CXX: gcc/g++ -isysroot <dir>
+
+[ctags]
+https://github.com/universal-ctags/ctags
+--disable-xml --disable-json --disable-seccomp --disable-yaml --disable-pcre2
