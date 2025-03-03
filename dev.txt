@@ -1,0 +1,26 @@
+https://developer.apple.com/download/all/
+pkgutil --expand-full <pkg> <dir>, combine tools and SDK
+cd usr/bin; mv gcc gcc.0; ln -sf clang gcc; cd ../..
+cd Library/Frameworks/Python3.framework/Versions/3.9; mv Resources/Python.app/**/Python bin/python3.9; rm -rf Resources/Python.app
+install_name_tool -change @executable_path/../../../../Python3 @executable_path/../Python3 bin/python3.9; codesign -f -s - bin/python3.9
+
+CC/CXX: clang/clang++ -isysroot ~/.local/opt/CLT/SDKs/MacOSX.sdk
+
+[gcc]
+s=(build-essential gdb libncurses-dev libreadline-dev libxml2-dev libcurl4-openssl-dev zlib1g-dev uuid-dev libexpat1-dev libicu-dev)
+b=(`apt list --installed|sed -e 's|/.*$||g'`)
+l=();for a in `apt-cache depends --recurse --no-recommends --no-suggests --no-conflicts --no-breaks --no-replaces --no-enhances $s|grep "^\w"|grep -v ^cdebconf|grep -v ^libdebian|sort -u`;do [ ${b[(ie)$a]} -gt ${#b} ] &&l+=($a);done
+d=`pwd`;cd `mktemp -d`;apt download $l;for a in *; do dpkg -x $a $d; done; cd -
+
+mkdir lib lib64; ln -sf /lib/x86_64-linux-gnu lib; ln -sf /lib64/ld-linux-x86-64.so.2 lib64
+d=usr/lib/x86_64-linux-gnu; for a in $d/*.so $d/libstdc++.so.6; do b=`readlink -f $a`; [ ! -f $a ] && ln -sf /lib/x86_64-linux-gnu/${b##*/} $a; done
+for a in usr/lib/x86_64-linux-gnu/pkgconfig/*.pc usr/share/pkgconfig/*.pc; do [ ! -L $a ] && sed -i -e 's|= */usr|='$PWD'/usr|g' $a; done
+LD_LIBRARY_PATH=$PWD/usr/lib/x86_64-linux-gnu
+
+CC/CXX: gcc/g++ --sysroot=$HOME/.local/opt/gcc
+
+[ldd lib/*|grep ~/|awk '{system("[ ! -f /lib/x86_64-linux-gnu/"$1" ] && cp -n "$3" lib/"$1)}']
+
+[ctags]
+https://github.com/universal-ctags/ctags
+--disable-xml --disable-json --disable-seccomp --disable-yaml --disable-pcre2
