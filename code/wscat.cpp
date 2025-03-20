@@ -5,12 +5,21 @@
 
 #include <string>
 
+#include <sys/ioctl.h>
+#if defined(__OpenBSD__) || defined(__APPLE__)
+#include <util.h>
+#define READ_EXIT (n == 0)
+#else
+#include <pty.h>
+#define READ_EXIT (has_pty ? (n < 0 && errno == EIO) : (n == 0))
+#endif
+
 static char usio_ibuf[65536];
 static std::string usio_obuf;
 static us_internal_callback_t *usio_icb = 0, *usio_ocb = 0;
 static void (*usio_read_cb)(std::string_view) = 0;
 static void (*usio_close_cb)() = 0;
-static int fdin = 0, fdout = 1;
+static int fdin = 0, fdout = 1, has_pty = 0, pty;
 
 static us_internal_callback_t *usio__init_fd_cb(int fd, us_loop_t *loop, void (*cb)(us_internal_callback_t *)) {
 	int flags;
@@ -28,58 +37,22 @@ static us_internal_callback_t *usio__init_fd_cb(int fd, us_loop_t *loop, void (*
 	return ret_cb;
 }
 
-static void usio__free_cb(us_internal_callback_t **pcb) {
-	us_poll_stop((us_poll_t *)*pcb, (*pcb)->loop);
-	us_poll_free((us_poll_t *)*pcb, (*pcb)->loop);
-	*pcb = 0;
+static void usio__free_cb(us_internal_callback_t *pcb) {
+	us_poll_stop((us_poll_t *)pcb, pcb->loop);
+	us_poll_free((us_poll_t *)pcb, pcb->loop);
 }
 
-#define READ_EXIT (n == 0)
-#ifdef WSCAT_TTY
-#include <sys/ioctl.h>
-#if defined(__OpenBSD__) || defined(__APPLE__)
-#include <util.h>
-#else
-#include <pty.h>
-#undef READ_EXIT
-#define READ_EXIT (n < 0 && errno == EIO)
-#endif
-
-static int pty;
-int pty_spawn(const char *args[], uint16_t rows, uint16_t cols) {
-	int pid, flags;
-	struct winsize size = {rows, cols, 0, 0};
-	pid = forkpty(&pty, 0, 0, &size);
-	if (pid < 0) return -1;
-	else if (pid == 0) {
-		setsid();
-		int ret = execvp(args[0], (char * const *)args);
-		if (ret < 0) {
-			perror("execvp failed\n");
-			_exit(-errno);
-		}
-	}
-	return ((flags = fcntl(pty, F_GETFL)) == -1
-			|| fcntl(pty, F_SETFL, flags | O_NONBLOCK) == -1
-			|| fcntl(pty, F_SETFD, FD_CLOEXEC) == -1
-			|| (fdin = dup(pty)) < 0 || (fdout = dup(pty)) < 0 );
+void usio_exit() {
+	if(usio_icb) { usio__free_cb(usio_icb); usio_icb = 0; }
+	if(usio_ocb) { usio__free_cb(usio_ocb); usio_ocb = 0; }
+	if(usio_close_cb) usio_close_cb();
 }
-
-void pty_resize(uint16_t rows, uint16_t cols) {
-	struct winsize size = {rows, cols, 0, 0};
-	ioctl(pty, TIOCSWINSZ, &size);
-}
-#endif // WSCAT_TTY
 
 void usio_run(us_loop_t *loop, void (*rcb)(std::string_view) = 0, void (*ccb)() = 0) {
 	usio_icb = usio__init_fd_cb(fdin, loop, [](us_internal_callback_t *) {
 		ssize_t n = read(fdin, usio_ibuf, sizeof(usio_ibuf));
 		if(n > 0 && usio_read_cb) usio_read_cb(std::string_view(usio_ibuf, (size_t)n));
-		else if(READ_EXIT) {
-			usio__free_cb(&usio_icb);
-			usio__free_cb(&usio_ocb);
-			if(usio_close_cb) usio_close_cb();
-		}
+		else if(READ_EXIT) usio_exit();
 	});
 	usio_read_cb = rcb;
 	usio_close_cb = ccb;
@@ -107,11 +80,37 @@ void usio_write(std::string_view msg) {
 	usio_obuf.append(msg);
 }
 
+int pty_spawn(const char *args[], uint16_t rows, uint16_t cols) {
+	int pid, flags;
+	struct winsize size = {rows, cols, 0, 0};
+	pid = forkpty(&pty, 0, 0, &size);
+	if (pid < 0) return -1;
+	else if (pid == 0) {
+		setsid();
+		int ret = execvp(args[0], (char * const *)args);
+		if (ret < 0) {
+			perror("execvp failed\n");
+			_exit(-errno);
+		}
+	}
+	return ((flags = fcntl(pty, F_GETFL)) == -1
+			|| fcntl(pty, F_SETFL, flags | O_NONBLOCK) == -1
+			|| fcntl(pty, F_SETFD, FD_CLOEXEC) == -1
+			|| (fdin = dup(pty)) < 0 || (fdout = dup(pty)) < 0 );
+}
+
+void pty_resize(uint16_t rows, uint16_t cols) {
+	struct winsize size = {rows, cols, 0, 0};
+	ioctl(pty, TIOCSWINSZ, &size);
+}
+
 #include "App.h"
 
 struct _Empty {};
-us_listen_socket_t *server = 0;
-std::vector<uWS::WebSocket<false, true, _Empty> *> clients;
+void *server = 0, *client = 0;
+std::string obuf;
+std::vector<std::string> origs;
+int kmode = 1;
 
 int main(int argc, char **argv) {
 	const char *path = "/", *host = "localhost";
@@ -120,49 +119,57 @@ int main(int argc, char **argv) {
 		if(argv[i][1]=='p' && ++i < argc) port = atoi(argv[i]);
 		else if(argv[i][1]=='i' && ++i < argc) host = argv[i];
 		else if(argv[i][1]=='u' && ++i < argc) path = argv[i];
+		else if(argv[i][1]=='o' && ++i < argc) origs.push_back(argv[i]);
+		else if(argv[i][1]=='k') kmode = 0; else if(argv[i][1]=='K') kmode = 2;
+		else if(argv[i][1]=='t') has_pty = 1;
 		else break;
 	}
-#ifdef WSCAT_TTY
-	const char *args[] = {getenv("SHELL"), 0, 0, 0};
-	if(i < argc) { args[1] = "-c"; args[2] = argv[i]; }
-	if(pty_spawn(args, 24, 80)) return 1;
-#endif // WSCAT_TTY
+	if(port < 0) fcntl(-port, F_SETFD, FD_CLOEXEC);
+	if(has_pty) {
+		const char *args[] = {getenv("SHELL"), 0, 0, 0};
+		if(i < argc) { args[1] = "-c"; args[2] = argv[i]; }
+		if(pty_spawn(args, 24, 80)) return 1;
+	}
 	auto app = uWS::App().ws<_Empty>(path, {
 		.compression = uWS::CompressOptions(uWS::SHARED_COMPRESSOR|uWS::SHARED_DECOMPRESSOR),
 		.maxPayloadLength = 100 * 1024 * 1024,
 		.maxBackpressure = 100 * 1024 * 1024,
+		.upgrade = [](auto *res, auto *req, auto *context) {
+			if(origs.empty()||std::find(origs.begin(),origs.end(),req->getHeader("origin"))!=origs.end()) {
+				res->template upgrade<_Empty>({}, req->getHeader("sec-websocket-key"),
+					req->getHeader("sec-websocket-protocol"),
+					req->getHeader("sec-websocket-extensions"), context);
+			} else {
+				res->writeStatus("403 Forbidden")->end({}, true);
+				if(kmode == 1 && !client) usio_exit();
+			}
+		},
 		.open = [](auto *ws) {
-			clients.push_back(ws);
+			if(client) ws->close();
+			else { if(!obuf.empty()) { ws->send(obuf); obuf.clear(); } client = ws; }
 		},
 		.message = [](auto *ws, std::string_view msg, uWS::OpCode op) {
-			if(ws == clients.front()) {
-		       		if(op == 1) usio_write(msg);
-#ifndef WSCAT_TTY
-				else std::cerr << msg << "\n";
-#else
-				else if(op == 2 && msg.length() >= 4)
+			if(ws == client) {
+				if(op == 1 && !msg.empty()) usio_write(msg);
+				else if(!has_pty && op == 2) std::cerr << msg << "\n";
+				else if(has_pty && op == 2 && msg.length() >= 4)
 					pty_resize(*(uint16_t *)msg.data(), *(uint16_t *)(msg.data()+2));
-#endif // WSCAT_TTY
 			}
 		},
 		.close = [](auto *ws, int, std::string_view) {
-			if(server) {
-				auto r = std::find(clients.begin(), clients.end(), ws);
-				if(r != clients.end()) clients.erase(r);
-			}
+			if(ws == client) { client = 0; if(kmode) usio_exit(); }
 		}
 	});
 	if(port > 0) app.listen(host, port, [](auto *s) { server = s; });
-	else app.listen([](auto *s) { server = s; }, host);
+	else if(port == 0) app.listen([](auto *s) { server = s; }, host); else app.adoptSocket(-port);
 	usio_run((us_loop_t *)uWS::Loop::get(), [](std::string_view buf) {
-			if(!clients.empty()) clients.front()->send(buf);
+			if(client) ((uWS::WebSocket<false,true,_Empty> *)client)->send(buf); else obuf.append(buf);
 		}, []() {
 			if(server) {
-				us_listen_socket_close(false, server);
+				us_listen_socket_close(false, (us_listen_socket_t *)server);
 				server = 0;
 			}
-			for(auto *ws: clients) ws->close();
-			clients.clear();
+			if(client) ((uWS::WebSocket<false,true,_Empty> *)client)->close();
 		});
 	app.run();
 }
