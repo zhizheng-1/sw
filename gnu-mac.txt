@@ -1,0 +1,27 @@
+[gnu]
+https://www.gnu.org/software/coreutils/
+
+mkdir a; cd a
+l=(coreutils util-linux findutils diffutils gpatch make)
+os=sequoia; os0=sonoma; pkgign="'python-packaging','python@3.13'"
+i=1; l0=($l)
+while [[ $i -le ${#l} ]]; do
+	echo $i ${l[$i]}
+	curl https://formulae.brew.sh/api/formula/${l[$i]}.json >a.json
+	r=(`cat a.json|python3 -c "import sys, json; j=json.load(sys.stdin); r=j['variations']['$os']['dependencies'] if '$os' in j['variations'] and 'dependencies' in j['variations']['$os'] else j['dependencies']; r=[x for x in r if x not in {$pkgign}]; print(' '.join(r))"`)
+	for a in $r; do [[ ${l[(ie)$a]} -gt ${#l} ]] && l=($l $a); echo $l; done
+	u=`cat a.json|python3 -c "import sys, json; j=json.load(sys.stdin)['bottle']['stable']['files']; u=j['$os']['url'] if '$os' in j else j['$os0']['url']; print(u)"`
+	print $u
+	curl -L -H 'Authorization: Bearer QQ==' "$u" >a
+	tar zxvf a
+	i=$((i+1))
+done
+rm a a.json
+
+d=../gnu; mkdir $d; for a in $l0; do for b in $a/*/*; do [ -d $b ] && cp -R $b $d; done; done
+for f in `otool -L bin/*|grep @|awk '{print $1}'|sort -u`; do cp -n ../a/*/*/lib/${f##*/} lib; done
+for f in `otool -L lib/*|grep @|awk '{print $1}'|sort -u`; do cp -n ../a/*/*/lib/${f##*/} lib; done; ls -l lib|wc -l
+p(){ l=(); for f in $~1; do [ ! -L $f ] && otool -L $f|sed 1,`otool -D $f|awk 'END{print NR}'`d|grep "$2"|awk '{print $1}'|while read i;do j=$3/${i##*/}; echo $f $i $j; install_name_tool -change $i $j $f; l+=($f); done; done; codesign -f -s - ${(u)l} }
+p "bin/*" @ @executable_path/../lib
+p "lib/*" @ @loader_path
+sed -i ' ' -e 's|@@[A-Z]*_[A-Z]*@@/opt/[^/ ]*/[0-9.]*|'$PWD'|g' -e 's|@@[A-Z]*_[A-Z]*@@/[^/ ]*/[0-9.]*|'$PWD'|g' -e 's|@@[A-Z]*_[A-Z]*@@|'$PWD'|g' lib/pkgconfig/*.pc
