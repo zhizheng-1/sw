@@ -1,0 +1,31 @@
+<html>
+<head>
+<meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0"><meta charset="UTF-8">
+<link rel="stylesheet" href="xterm.css" />
+<script src="xterm.js"></script> <!-- 's/${e\.sel[^.]*\.css}/#ffffff00;backdrop-filter:invert()/g' 's/this._isCe[^)]*)/0/g' 's/dth=Math\.round(\(this\.d[^)]*\))/dth=\1/g' 's/e=th[^}]*e}px`,/e=0;/g' 's/C\*c-[^-]*())/C===1?0:(&)/g' 's/if(t\.fillR/return this.toColor(t.fillStyle);&/g' -->
+<!-- <script src="xterm-addon-webgl.js"></script> -->
+<script src="xtermrc.js"></script> <!-- optional file that provides window.XTERMRC function -->
+<style> html {background:darkgray} body {margin:1px;overflow:hidden;border:2px solid;padding:2px;display:inline-block;background:white} </style>
+<script>
+window.onload = () => {
+  const term = new Terminal({fontFamily:"ui-monospace,monospace",fontSize:11,theme:{foreground:"black",background:"white",cursor:"black",cursorAccent:"#0000",black:"black",red:"maroon",green:"green",yellow:"olive",blue:"navy",magenta:"purple",cyan:"teal",white:"silver",brightBlack:"gray",brightRed:"red",brightGreen:"lime",brightYellow:"yellow",brightBlue:"blue",brightMagenta:"fuchsia",brightCyan:"aqua",brightWhite:"white"},drawBoldTextInBrightColors:false});
+  term.open(document.body);
+  //term.loadAddon(new WebglAddon.WebglAddon());
+  const socket = new WebSocket("ws://"+(new URLSearchParams(window.location.search).get('i')||'localhost:7681'), ['wscat']);
+  socket.onopen = () => {
+    socket.binaryType = 'arraybuffer';
+    term.onData(data => socket.send(data));
+    socket.onmessage = (e) => term.write(new Uint8Array(e.data));
+    term.onTitleChange(data => document.title = data);
+    term.onResize(({cols,rows}) => socket.send(new Uint8Array([rows&0xFF,rows>>8,cols&0xFF,cols>>8])));
+    (visualViewport.onresize = () => term.resize(Math.floor((visualViewport.width-10)/term._core._renderService.dimensions.css.cell.width),Math.floor((visualViewport.height-10)/term._core._renderService.dimensions.css.cell.height)))();
+    term._core._themeService.onChangeColors(c=>Object.assign(document.body.style,{borderColor:c.foreground.css,backgroundColor:c.background.css}));
+    term.parser.registerOscHandler(51, (d) => {try{const _=JSON.parse(d);if(_.length==3&&_[0]=='call'&&_[1].startsWith('Tapi_')&&typeof term[_[1]]=='function')term[_[1]](..._[2])}catch(e){alert(e)}});
+    if(typeof window.XTERMRC == 'function') window.XTERMRC(term);
+    window.onbeforeunload = (e) => {if(socket.readyState === WebSocket.OPEN) e.preventDefault();};
+    term.focus();
+  };
+};
+</script>
+</head>
+<body></body></html>

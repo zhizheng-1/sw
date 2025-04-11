@@ -1,0 +1,39 @@
+useradd -m -d /home/user user
+passwd user
+usermod -a -G sudo user
+
+sudo apt remove --purge snapd # remove all snap apps
+sudo apt-mark auto \*
+sudo apt install linux-image-generic-hwe-24.04 openssh-server zip unzip avahi-daemon
+sudo apt install bind9-dnsutils curl ed fdisk iproute2 iputils-ping lshw lsof netcat-openbsd netplan.io rsync sudo tcpdump time [wpasupplicant] xfsprogs
+sudo rm /etc/apt/apt.conf.d/20apt-esm-hook.conf
+sudo apt install samba cifs-utils apache2
+sudo systemctl disable smbd
+sudo systemctl disable apache2
+
+release upgrade: apt install ubuntu-standard update-manager-core
+
+sudo rm -rf /usr/local/*
+echo 'PATH="/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"' >/etc/environment
+
+sudo chmod -x /etc/update-motd.d/*
+
+sudo sh -c "echo LANG=en_US.UTF-8 >/etc/default/locale"
+timedatectl list-timezones
+sudo timedatectl set-timezone <timezone>
+
+[swap]
+sudo dd if=/dev/zero of=/swap.img bs=1024 count=4M
+sudo chmod 0600 /swap.img
+sudo mkswap /swap.img
+sudo echo "/swap.img none swap sw 0 0" >>/etc/fstab
+
+[~/.local/etc/zprofile]
+export PATH=~/.local/bin:$PATH
+export MANPATH=~/.local/share/man:$MANPATH
+
+[fonts]
+ln -sf /System/Library/Fonts/Supplemental/Arial* ~/.local/share/fonts
+echo '<fontconfig><dir>~/.local/share/fonts</dir><selectfont><rejectfont><glob>/System/*</glob><glob>/Library/*</glob></rejectfont></selectfont></fontconfig>' >~/.local/etc/fonts/fonts.conf
+
+echo "export FONTCONFIG_PATH=~/.local/etc/fonts" >>~/.local/etc/zprofile
