@@ -1,0 +1,30 @@
+<html>
+<head>
+<meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0"><meta charset="UTF-8">
+<link rel="stylesheet" href="xterm.css" />
+<script src="xterm.js"></script>
+<script src="xterm-addon-webgl.js"></script>
+<script src="xtermrc.js"></script> <!-- optional file that provides window.XTERMRC function -->
+<style> html {background:silver} body {margin:2px 5px 5px;overflow:hidden;display:inline-block} </style>
+<script>
+window.onload = () => {
+  const term = new Terminal({fontFamily:"monospace",fontSize:12,theme:{}});
+  term.open(document.body);
+  term.loadAddon(new WebglAddon.WebglAddon());
+  const socket = new WebSocket("ws://"+(new URLSearchParams(window.location.search).get('i')||'localhost:7681'), ['wscat']);
+  socket.onopen = () => {
+    socket.binaryType = 'arraybuffer';
+    term.onData(data => socket.send(data));
+    socket.onmessage = (e) => term.write(new Uint8Array(e.data));
+    term.onTitleChange(data => document.title = data);
+    term.onResize(({cols,rows}) => socket.send(new Uint8Array([rows&0xFF,rows>>8,cols&0xFF,cols>>8])));
+    (visualViewport.onresize = () => term.resize(Math.floor((visualViewport.width-10)/term._core._renderService.dimensions.css.cell.width),Math.floor((visualViewport.height-7)/term._core._renderService.dimensions.css.cell.height)))();
+    term.parser.registerOscHandler(51, (d) => {try{const _=JSON.parse(d);if(_.length==3&&_[0]=='call'&&_[1].startsWith('Tapi_')&&typeof term[_[1]]=='function')term[_[1]](..._[2])}catch(e){alert(e)}});
+    if(typeof window.XTERMRC == 'function') window.XTERMRC(term);
+    window.onbeforeunload = (e) => {if(socket.readyState === WebSocket.OPEN) e.preventDefault();};
+    term.focus();
+  };
+};
+</script>
+</head>
+<body></body></html>

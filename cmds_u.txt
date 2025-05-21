@@ -1,0 +1,19 @@
+[zsh]
+https://zsh.sourceforge.io
+https://github.com/apple-oss-distributions/zsh/blob/main/Makefile
+https://packages.ubuntu.com/noble/zsh
+
+sudo apt install libpcre2-dev
+Download Source Package zsh: [zsh_5.9-6ubuntu2.debian.tar.xz]
+patch -p1 <../cherry-pick-b62e91134-51723-migrate-pcre-module-to-pcre2.patch
+patch -p1 <../cherry-pick-10bdbd8b-51877-do-not-build-pcre-module-if-pcre2-config-is-not-found.patch
+./configure --prefix=/usr --with-tcsetpgrp --enable-multibyte --enable-unicode9 --enable-max-function-depth=700 --enable-pcre
+copy /etc/zshrc
+
+[nano]
+apt remove nano; deb -i alpine-pico*; cd /usr/bin;mv pico.alpine pico;ln -sf pico nano;cd /usr/share/man/man1;mv pico.alpine.1.gz pico.1.gz;ln -sf pico.1.gz nano.1.gz;rm -rf /usr/share/doc/alpine-pico
+
+[vim]
+https://github.com/vim/vim
+./configure --prefix=/usr --with-features=normal --enable-gui=no --with-x=no --enable-cscope --enable-terminal --disable-selinux --disable-nls --disable-xattr --with-tlib=ncurses --with-compiledby=root@linux
+cd bin;ln -sf vim vi;cd ../share/man/man1;ln -sf vim.1 vi.1

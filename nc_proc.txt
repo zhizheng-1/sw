@@ -1,0 +1,6 @@
+coproc sh -i 2>&1; nc -klU proc.sock <&p >&p
+
+stty raw -echo;nc -U proc.sock;stty sane
+stty rows <rows> cols <cols>
+echo "\e[8;$LINES;${COLUMNS}t"
+python3 -c "import pty; pty.spawn('$SHELL')"
